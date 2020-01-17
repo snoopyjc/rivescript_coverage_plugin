@@ -1,0 +1,76 @@
+/*
+ * Look at this style comment!
+ */
+> begin
+
+  + request
+  - {ok}
+
+< begin
+
+! var best_color = purple
+
+// Comment between lines
+
++ hi			// Regular comment on line
+- hey
+! sub hello = hi
+
++ hey
+@ hi
+
++ yo
+- {@hi} yo		// In-response redirect
+
++ hi
+% hey
+- hey again!
+- I already said "hey"
+
++ hey{weight=2}
+% hey
+- I already said "hey"
+- hey again!
+
+! local concat = space
+
++ hi
+^ *{weight=2}
+- You said hi <star>
+- Hi <star> back!
+
+! local concat = none
+
++ bye
+- Good bye!
+
++ formal
+- {formal}<id>{/formal}
+
+! array colors = red blue green purple orange black white
++ (@colors)
+* <star> == <bot best_color> => Correct, <bot best_color> is the best color!
+* <star> != <bot best_color> => No, <bot best_color> is the\s
+^ best color!
+
++ topic
+- entered topic{topic=topic}
++ object
+- <call>object</call>
+
+> topic topic
+	+ *
+	- You're in topic, type q to quit
+
+	+ q
+	- Exiting topic{topic=random}
+< topic
+
+> object object python
+    # Comment in object
+
+    if 1 == 0:
+        statement_not_executed = 1
+    return "result from object"
+< object
+

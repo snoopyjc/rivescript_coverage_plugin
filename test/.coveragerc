@@ -1,0 +1,9 @@
+[run]
+plugins =
+    rivescript_coverage_plugin
+
+[rivescript_coverage_plugin]
+show_parsing = False
+show_tracing = False
+show_startup = False
+clean_rs_objects = True
