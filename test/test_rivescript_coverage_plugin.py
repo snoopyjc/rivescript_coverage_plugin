@@ -6,6 +6,7 @@ Tests for `rivescript_coverage_plugin` module.
 import rive
 import pytest
 from rivescript import RiveScript
+import os
 
 USER='localuser'
 
@@ -39,5 +40,18 @@ def test_star():
     resp = say('star')
     assert resp in ("I don't know what you mean", "Sorry, I don't know that")
     assert say('xyzzy') == '[ERR: No Reply Matched]'
+
+def test_bugs():        # Test bugs found in the code
+    # v0.2.0: Issue #3: Plugin crashes if rive file is deleted by test
+    with open('brain/issue_3.rive', 'w') as d:
+        print('+ dynamic', file=d)
+        print('- dynomite!', file=d)
+
+    rive.rs.load_file('brain/issue_3.rive')
+    rive.rs.sort_replies()
+    assert say('dynamic') == 'dynomite!'
+
+    os.remove('brain/issue_3.rive')
+
 
 

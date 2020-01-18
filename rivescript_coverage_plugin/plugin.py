@@ -1,6 +1,7 @@
 """The RiveScript coverage plugin."""
 # Written by @snoopyjc 2020-01-16
 # Based on Coverage RiveScript Plugin by nedbat with changes by PamelaM
+# v0.2.0
 
 # It's not pretty in places but it works!!
 
@@ -267,8 +268,11 @@ def position_for_token(token):  # Not used
 def read_template_source(filename):
     """Read the source of a RiveScript template, returning the Unicode text."""
 
-    with open(filename, 'r', encoding='utf-8') as f:
-        text = f.read()
+    try:                    # v0.2.0: Issue #3
+        with open(filename, 'r', encoding='utf-8') as f:
+            text = f.read()
+    except Exception:       # v0.2.0: Issue #3
+        text = ''           # v0.2.0: Issue #3
 
     return text
 
@@ -357,7 +361,9 @@ class RiveScriptPlugin(
                 continue
             rive_file = os.path.abspath(fn)
             for line in lines:
-                nl = lno + line - 1 # Note the hit on line 1 will map to a hit on the '> object'
+                if line == 1:       # v0.2.0: Issue 4: ignore hit on 'def NAME():' line
+                    continue        # v0.2.0: Issue 4
+                nl = lno + line - 1
                 if rive_file in rs_line_data:
                     rs_line_data[rive_file][nl] = None
                 else:
@@ -597,8 +603,10 @@ TOKEN_OBJECT, TOKEN_COMMENT, TOKEN_DEF, TOKEN_LABEL, TOKEN_LABEL_END, TOKEN_TRIG
 # Names for token_type
 TOKEN_MAPPING = ['object', 'comment', '! def', '> label', '< label', '+ trigger', '- reply', '% previous', '^ continue', '@ redirect', '* condition']
 
-EXECUTIBLE_TOKENS = {TOKEN_OBJECT, TOKEN_TRIGGER, TOKEN_REPLY, TOKEN_PREVIOUS, TOKEN_CONTINUE, TOKEN_REDIRECT, TOKEN_CONDITION}
-NON_EXECUTIBLE_TOKENS = {TOKEN_COMMENT, TOKEN_DEF, TOKEN_LABEL, TOKEN_LABEL_END}
+# v0.2.0: Issue #4: EXECUTIBLE_TOKENS = {TOKEN_OBJECT, TOKEN_TRIGGER, TOKEN_REPLY, TOKEN_PREVIOUS, TOKEN_CONTINUE, TOKEN_REDIRECT, TOKEN_CONDITION}
+# v0.2.0: Issue #4: NON_EXECUTIBLE_TOKENS = {TOKEN_COMMENT, TOKEN_DEF, TOKEN_LABEL, TOKEN_LABEL_END}
+EXECUTIBLE_TOKENS = {TOKEN_TRIGGER, TOKEN_REPLY, TOKEN_PREVIOUS, TOKEN_CONTINUE, TOKEN_REDIRECT, TOKEN_CONDITION}   # v0.2.0: Issue #4
+NON_EXECUTIBLE_TOKENS = {TOKEN_OBJECT, TOKEN_COMMENT, TOKEN_DEF, TOKEN_LABEL, TOKEN_LABEL_END}                      # v0.2.0: Issue #4
 
 class Lexer:
     """Lexer for RiveScript"""
@@ -674,6 +682,7 @@ class Lexer:
                             "name": objname,
                             "language": objlang,
                             "code": objbuf,
+                            "end_lineno": lineno,     # v0.2.0: Issue #4
                         }))
                         object_source[objname] = (self.filename, objlineno)
                     objname = ''
@@ -1020,6 +1029,8 @@ class Lexer:
                 continue
 
         # print(f'trigger_source = {trigger_source}')     # DEBUG
+        if self.tokens is None: # v0.2.0: Issue #2
+            self.tokens = []    # v0.2.0: Issue #2
         rs_lexed[self.filename] = self
         return self.tokens
 
@@ -1064,11 +1075,11 @@ class FileReporter(coverage.plugin.FileReporter):
                 )
             if token.token_type in EXECUTIBLE_TOKENS:
                 source_lines.add(token.lineno)
-                if token.token_type == TOKEN_OBJECT:
-                    for i, code in enumerate(token.extra['code'], start=1):
-                        line = code.strip()
-                        if len(line) and line[0] != '#':
-                            source_lines.add(token.lineno+i)
+            elif token.token_type == TOKEN_OBJECT:      # v0.2.0: Issue #4: The code is executable, not the OBJECT
+                for i, code in enumerate(token.extra['code'], start=1):
+                    line = code.strip()
+                    if len(line) and line[0] != '#':
+                        source_lines.add(token.lineno+i)
 
             if show_parsing:
                 print_log("\t\t\tNow source_lines is: {!r}".format(source_lines))
@@ -1094,11 +1105,12 @@ class FileReporter(coverage.plugin.FileReporter):
         for token in tokens:
             if token.token_type not in EXECUTIBLE_TOKENS:
                 non_source_lines.add(token.lineno)
-            elif token.token_type == TOKEN_OBJECT:
-                for i, code in enumerate(token.extra['code'], start=1):
-                    line = code.strip()
-                    if not len(line) or line[0] == '#':
-                        non_source_lines.add(token.lineno+i)
+                if token.token_type == TOKEN_OBJECT:        # v0.2.0: Issue #4
+                    for i, code in enumerate(token.extra['code'], start=1):
+                        line = code.strip()
+                        if not len(line) or line[0] == '#':
+                            non_source_lines.add(token.lineno+i)
+                    non_source_lines.add(token.extra['end_lineno']) # v0.2.0: Issue #4
 
         if show_parsing:
             print_log("\t\t\tNon source_lines is: {!r}".format(non_source_lines))

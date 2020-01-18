@@ -1,8 +1,9 @@
 Name                                 Stmts   Miss  Cover
 --------------------------------------------------------
+brain/issue_3.rive                       0      0   100%
 brain/star.rive                          5      1    80%
-brain/test.rive                         40      4    90%
+brain/test.rive                         39      4    90%
 rive.py                                 12      0   100%
-test_rivescript_coverage_plugin.py      30      0   100%
+test_rivescript_coverage_plugin.py      39      0   100%
 --------------------------------------------------------
-TOTAL                                   87      5    94%
+TOTAL                                   95      5    95%
