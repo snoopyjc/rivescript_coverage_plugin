@@ -1,0 +1,21 @@
++ issue 6
+- Entering topic issue_6{topic=issue_6}
+
++ issue 6a
+- Entering topic issue_6a{topic=issue_6a}
+
+> topic issue_6 inherits random
+	+ *
+	- {@<star>}{topic=random}
+
+	+ issue
+	- Check coverage!
+< topic
+
+> topic issue_6a includes issue_6
+	+ sixa
+	- Check sixa!
+
+	+ exit
+	- Exiting topic{topic=random}
+< topic

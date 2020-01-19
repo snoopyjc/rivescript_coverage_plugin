@@ -53,5 +53,14 @@ def test_bugs():        # Test bugs found in the code
 
     os.remove('brain/issue_3.rive')
 
+    # v0.2.2: Issue #6: Topic with inherits or includes don't show any coverage
+
+    assert say('issue 6') == 'Entering topic issue_6'
+    assert say('issue') == 'Check coverage!'
+    assert say('bye') == 'Good bye!'
+
+    assert say('issue 6a') == 'Entering topic issue_6a'
+    assert say('sixa') == 'Check sixa!'
+    assert say('exit') == 'Exiting topic'
 
 

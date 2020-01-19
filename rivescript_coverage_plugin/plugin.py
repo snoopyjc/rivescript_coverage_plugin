@@ -288,6 +288,7 @@ class RE:       # Borrowed from rivescript/regexp.py
     now_try_to_match = re.compile(r"^Now try to match .* to (.+)$")
     reply       = re.compile(r'^Reply: (.*)$')
     checking_topic = re.compile(r"^Checking topic (.+) for any %Previous's\.$")
+    setting_topic = re.compile(r"^Setting user's topic to (.*)$")
     conditional = re.compile(r"^Left: ([^;]*); eq: ([^;]*); right: (.*) => (.*)$")
     #call = re.compile(r"<call>([^\s<]+)")
 
@@ -339,6 +340,8 @@ class RiveScriptPlugin(
 
         self.source_map = {}
         self.topic = 'random'
+        self.last_topic = 'random'      # v0.2.2
+        self.context = 'normal'         # v0.2.2
         self.last_reply = '<undef>'
 
     # --- CoveragePlugin methods
@@ -417,12 +420,21 @@ class RiveScriptPlugin(
             mo = re.match(RE.get_reply_to_user, message)
             if mo:
                 self.user = mo.group(1)
-        elif message.startswith('Try to match'):            # Normal trigger match
+        elif message.startswith("Try to match '"):            # V 0.2.2 Normal trigger match
             mo = re.match(RE.try_to_match, message)
             if mo:
                 self.last_trigger = mo.group(1)
                 self.prev_match = False
                 self.conditional = None
+                # v0.2.2: We completed the %Previous matching, now we
+                # are doing normal matching, and we start with the current
+                # topic, not the one last reported as 'Checking topic'.
+                # However, if we are handing the 'begin' block, we
+                # leave the topic alone
+                if self.context != 'begin':                         # v0.2.2
+                    self.last_topic = self.topic                    # v0.2.2
+                    if SHOW_TRACING:                                # v0.2.2
+                        print_log(f"debug_callback: last_topic = {self.last_topic}") # v0.2.2
         elif message.startswith('Now try to match'):        # Trigger match with %Previous already matched
             mo = re.match(RE.now_try_to_match, message)
             if mo:
@@ -469,12 +481,24 @@ class RiveScriptPlugin(
                     #rs_line_data[os.path.abspath(fn)][lno] = None
 
             if SHOW_TRACING:
-                print_log(f"Lines marked as executable in {self.filename} are now {rs_line_data[self.filename]}")
+                print_log(f"Lines marked as executed in {self.filename} are now {rs_line_data[self.filename]}") # v0.2.2
             # v0.2.1 self.last_reply = reply
+        elif message.startswith("Setting user's topic to "):    # v0.2.2
+            mo = re.match(RE.setting_topic, message)            # v0.2.2
+            if mo:                                              # v0.2.2
+                if SHOW_TRACING:                                # v0.2.2
+                    print_log(f"debug_callback: topic = {self.topic}") # v0.2.2
+                self.topic = mo.group(1)                        # v0.2.2
         elif message.startswith('Checking topic '):
             mo = re.match(RE.checking_topic, message)
             if mo:
                 self.last_topic = mo.group(1)
+                if mo.group(1) == '__begin__':      # v0.2.2
+                    self.context = 'begin'          # v0.2.2
+                else:                               # v0.2.2
+                    self.context = 'normal'         # v0.2.2
+                if SHOW_TRACING:                                # v0.2.2
+                    print_log(f"debug_callback: last_topic = {self.last_topic}, context = {self.context}") # v0.2.2
                 self.prev_match = False
                 self.conditional = None
         elif message == 'Bot side matched!':    # last_reply matched the %previous
@@ -492,7 +516,7 @@ class RiveScriptPlugin(
                         break
                     ndx += 1
                 if SHOW_TRACING:
-                    print_log(f"Lines marked as executable in {self.filename} are now {rs_line_data[self.filename]}")
+                    print_log(f"Lines marked as executed in {self.filename} are now {rs_line_data[self.filename]}") # v0.2.2
             elif SHOW_TRACING:
                 print_log(f"Didn't find line {self.last_trigger_lineno} of {self.filename} in lineno_to_token_index")
 
@@ -1043,6 +1067,9 @@ class FileReporter(coverage.plugin.FileReporter):
         self._tokens = None
         self._lines_shown = False
         self._excluded_lines_shown = False
+        # v0.2.2: We are called twice, once with a relative
+        # path, and once with absolute, so normalize to absolute
+        self.filename = os.path.abspath(self.filename)  # v0.2.2
 
     def source(self):
         if self._source is None:
