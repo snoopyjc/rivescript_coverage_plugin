@@ -434,6 +434,7 @@ class RiveScriptPlugin(
             mo = re.match(RE.reply, message)
             if mo:
                 reply = mo.group(1)
+                self.last_reply = reply     # v0.2.1
                 lexer = Lexer(None, self.filename)
                 tokens = lexer.tokenize()
                 if self.last_trigger_lineno in lexer.lineno_to_token_index:
@@ -469,7 +470,7 @@ class RiveScriptPlugin(
 
             if SHOW_TRACING:
                 print_log(f"Lines marked as executable in {self.filename} are now {rs_line_data[self.filename]}")
-            self.last_reply = reply
+            # v0.2.1 self.last_reply = reply
         elif message.startswith('Checking topic '):
             mo = re.match(RE.checking_topic, message)
             if mo:
