@@ -4,6 +4,7 @@
 
 venv
 *.py[cod]
+RELEASE_INSTRUCTIONS.txt
 
 # C extensions
 *.so
@@ -31,6 +32,8 @@ pip-log.txt
 .tox
 nosetests.xml
 coverage_report.out
+htmlcov
+test/htmlcov
 
 # Translations
 *.mo

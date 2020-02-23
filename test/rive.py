@@ -1,6 +1,6 @@
 from rivescript import RiveScript
 
-DEBUG_RIVESCRIPT=False
+DEBUG_RIVESCRIPT=True
 BRAIN='brain'
 
 rs = None

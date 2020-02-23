@@ -41,6 +41,7 @@ class RiveScriptOptionsCapture:
         RiveScript._old_load_directory = RiveScript.load_directory
         RiveScript._old_load_file = RiveScript.load_file
         RiveScript._old_say = RiveScript._say
+        RiveScript._old_set_uservar = RiveScript.set_uservar        # v0.2.3
         self.rs_initialized = False
         self.debug_callback = None
         self._debug = False
@@ -107,10 +108,18 @@ class RiveScriptOptionsCapture:
                 print("Failed to load code from object", name)
                 print("The error given was: ", e)
 
+        def _new_set_uservar(rs_self, user, name, value):        # v0.2.3
+            rs_self._old_set_uservar(user, name, value)
+            if name == 'topic' and user == rs_self.current_user() and self.debug_callback is not None:
+                if SHOW_TRACING:
+                    print_log(f"_new_set_uservar: topic = {value}")
+                self.debug_callback("Setting user's topic to " + value)
+
         RiveScript.__init__ = _new_rs_init
         RiveScript.load_directory = _new_load_directory
         RiveScript.load_file = _new_load_file
         RiveScript._say = _new_say
+        RiveScript.set_uservar = _new_set_uservar           # v0.2.3
 
         PyRiveObjects.load = _new_load
 
@@ -459,7 +468,8 @@ class RiveScriptPlugin(
                                 rs_line_data[self.filename][token.lineno] = None
                             else:
                                 break
-                        elif token.token_type == TOKEN_CONDITION and token.extra == self.conditional:
+                        elif token.token_type == TOKEN_CONDITION and token.extra == self.conditional \
+                                and reply == self.conditional_reply:        # v0.2.3
                             rs_line_data[self.filename][token.lineno] = None
                             found = True
                         elif token.token_type == TOKEN_REPLY and token.extra == reply:
@@ -470,6 +480,10 @@ class RiveScriptPlugin(
                                 print_log(f"Didn't find reply '{reply}' for {self.last_trigger} near {self.filename}:{self.last_trigger_lineno}")
                             break
                         ndx += 1
+                    else:       # v0.2.3
+                        if SHOW_TRACING:
+                            print_log(f"Didn't find reply '{reply}' for {self.last_trigger} near {self.filename}:{self.last_trigger_lineno}")
+
                 elif SHOW_TRACING:
                     print_log(f"Didn't find line {self.last_trigger_lineno} of {self.filename} in lineno_to_token_index")
             # We don't have to do this any more now that we have real coverage in objects
@@ -524,6 +538,7 @@ class RiveScriptPlugin(
             mo = re.match(RE.conditional, message)
             if mo:
                 self.conditional = f'{mo.group(1)} {mo.group(2)} {mo.group(3)} => {mo.group(4)}'
+                self.conditional_reply = mo.group(4)        # v0.2.3
 
     def file_tracer(self, filename):
         if SHOW_STARTUP and not filename.endswith(".py"):

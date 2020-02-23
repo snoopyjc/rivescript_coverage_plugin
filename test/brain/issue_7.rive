@@ -1,0 +1,9 @@
+// Issue 7: If response is due to all conditionals failing, it's not marked as being executed
+
++ issue 7
+* <bot best_color> == green => Nope!
+* <bot best_color> == blue => Nope again!
+- issue_7 response1
+- issue_7 response2
+* <bot best_color> == orange => Not it!
+- issue_7 response3

@@ -33,6 +33,8 @@ def test_basic():
     assert say('purple') == 'Correct, purple is the best color!'
     assert say('topic') == 'entered topic'
     assert say('hi') == "You're in topic, type q to quit"
+    assert say('try in topic') == 'response in topic'
+    assert say('conditional in topic') == 'conditional in topic response'
     assert say('q') == 'Exiting topic'
     assert say('object') == 'result from object'
 
@@ -63,4 +65,13 @@ def test_bugs():        # Test bugs found in the code
     assert say('sixa') == 'Check sixa!'
     assert say('exit') == 'Exiting topic'
 
+    # v0.2.3: Issue #7: Conditional with alternate response not covered
+    assert say('issue 7').startswith('issue_7 response')
 
+    # v0.2.3: Issue #8: Topic changed in object
+    assert say('issue_8') == 'result from issue_8_object'
+    assert say('hi') == "You're in issue_8, type q to quit"
+    assert say('try in issue_8') == 'response in issue_8'
+    assert say('prev in issue_8') == 'prev response in issue_8'
+    assert say('conditional in issue_8') == 'conditional response in issue_8'
+    assert say('q') == 'Exiting issue_8'

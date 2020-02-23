@@ -1,0 +1,34 @@
+// Issue 8: If topic is changed in python code, then coverage in that new
+// topic doesn't mark executed lines.
+
++ issue_8
+- <call>issue_8_object</call>
+
+> topic issue_8
+	+ *
+	- You're in issue_8, type q to quit
+
+	+ try in issue_8
+	- response in issue_8
+
+	+ prev in issue_8
+	% response in issue_8
+	- prev response in issue_8
+
+	+ conditional in issue_8
+	* blue == green => Nope!
+	* green == green => conditional response in issue_8
+	- No again!
+
+	+ not executed in issue_8
+	- not run at all!
+
+	+ q
+	- Exiting issue_8{topic=random}
+< topic
+
+> object issue_8_object python
+    user = rs.current_user()
+    rs.set_uservar(user, 'topic', 'issue_8')
+    return "result from issue_8_object"
+< object
