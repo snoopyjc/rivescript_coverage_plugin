@@ -1,0 +1,48 @@
+// Issue #11: 'else', 'nonlocal', docstring, should be marked as not executed in object
+
+! version = 2.0
+
++ issue 11
+- <call>issue_11</call>
+
+> object issue_11 python
+    """"Outer
+        doc
+        string
+    """
+    non = None
+    def inner():
+        """Inner doc string"""
+        nonlocal non
+        global glob
+        non = """Not a docstring"""
+        non = """Not
+                 a
+                 docstring"""
+        non = \
+        """Not
+           a
+           docstring"""
+        non = '''Not a docstring'''
+        non = \
+        '''Not a docstring'''
+        non = \
+        '''Not
+           a
+           docstring'''
+        non = \
+           """Issue 11 response"""
+
+    def inner2():    # (Not called)
+        """inner2
+           doc
+           string"""
+        return  # Not executed
+
+    """Not a docstring"""
+    if non is not None:
+        pass    # Not executed
+    else:
+        inner()
+        return non
+< object

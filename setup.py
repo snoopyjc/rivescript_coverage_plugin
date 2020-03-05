@@ -23,7 +23,7 @@ history = open('HISTORY.rst').read().replace('.. :changelog:', '')
 
 setup(
     name='rivescript_coverage_plugin',
-    version='0.2.3',                    # Fix Issues #1-#4, #5, #6, #7
+    version='1.0.0',
     description='A plug-in to measure code coverage in RiveScript with python',
     long_description=readme + '\n\n' + doclink + '\n\n' + history,
     author='Joe Cool',
@@ -42,7 +42,7 @@ setup(
     zip_safe=False,
     keywords='rivescript_coverage_plugin',
     classifiers=[
-        'Development Status :: 4 - Beta',
+        'Development Status :: 5 - Production/Stable',
         'Intended Audience :: Developers',
         'License :: OSI Approved :: MIT License',
         'Natural Language :: English',

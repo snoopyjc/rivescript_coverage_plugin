@@ -1,0 +1,130 @@
+// Issue #14: If we have multiple users, the plugin was only keeping
+// track of 1 topic.  Need 1 per user.
+
++ issue 14 user q1
+- issue 14 user r1{topic=issue_14_user_topic_a}
+
+> topic issue_14_user_topic_a
+	+ issue 14 user q2
+	- issue 14 user r2{topic=issue_14_user_topic_b}
+< topic
+
+> topic issue_14_user_topic_b
+	+ issue 14 user q3
+	% issue 14 user r2
+	- issue 14 user r3{topic=issue_14_user_topic_c}
+< topic
+
+> topic issue_14_user_topic_c
+	+ issue 14 user q4
+	* green == blue => Nope!
+	* green == green => issue 14 user r4{topic=issue_14_user_topic_d}
+	- No no no!
+< topic
+
++ issue 14 user redirect q5
+- issue 14 user r5{topic=issue_14_user_topic_e}
+
+> topic issue_14_user_topic_d inherits random
+	+ issue 14 user q5
+	@ issue 14 user redirect q5
+< topic
+
++ issue 14 user redirect q6
+- issue 14 user r6{topic=issue_14_user_topic_f}
+
+> topic issue_14_user_topic_e includes random
+	+ issue 14 user q6
+	- {@ issue 14 user redirect q6}
+< topic
+
+> topic issue_14_user_topic_f
+	+ issue 14 user q7
+	- <call>issue_14_user_q7_object</call>
+< topic
+
+> object issue_14_user_q7_object python
+	"""Test changing the topic and providing the response in python code"""
+	user = rs.current_user()
+	rs.set_uservar(user, 'topic', 'issue_14_user_topic_g')
+	return "issue 14 user r7"
+< object
+
+> topic issue_14_user_topic_g
+	+ issue 14 user q8
+	* green == blue => Nope!
+	- issue 14 user r8{topic=random}{weight=10}
+	* red == orange => No no!
+< topic
+
++ issue 14 user q9
+- issue 14 user r9<set ten=10>{topic=issue_14_user_topic_h}
+
+> topic issue_14_user_topic_h
+	+ issue 14 user q10
+	- issue 14 user r<get ten>
+< topic
+
++ issue 14 user2 q1
+- issue 14 user2 r1{topic=issue_14_user2_topic_a}
+
+> topic issue_14_user2_topic_a
+	+ issue 14 user2 q2
+	- issue 14 user2 r2{topic=issue_14_user2_topic_b}
+< topic
+
+> topic issue_14_user2_topic_b
+	+ issue 14 user2 q3
+	% issue 14 user2 r2
+	- issue 14 user2 r3{topic=issue_14_user2_topic_c}
+< topic
+
+> topic issue_14_user2_topic_c
+	+ issue 14 user2 q4
+	* green == blue => Nope!
+	* green == green => issue 14 user2 r4{topic=issue_14_user2_topic_d}
+	- No no no!
+< topic
+
++ issue 14 user2 redirect q5
+- issue 14 user2 r5{topic=issue_14_user2_topic_e}
+
+> topic issue_14_user2_topic_d inherits random
+	+ issue 14 user2 q5
+	@ issue 14 user2 redirect q5
+< topic
+
++ issue 14 user2 redirect q6
+- issue 14 user2 r6{topic=issue_14_user2_topic_f}
+
+> topic issue_14_user2_topic_e includes random
+	+ issue 14 user2 q6
+	- {@ issue 14 user2 redirect q6}
+< topic
+
+> topic issue_14_user2_topic_f
+	+ issue 14 user2 q7
+	- <call>issue_14_user2_q7_object</call>
+< topic
+
+> object issue_14_user2_q7_object python
+	"""Test changing the topic and providing the response in python code"""
+	user2 = rs.current_user()
+	rs.set_uservar(user2, 'topic', 'issue_14_user2_topic_g')
+	return "issue 14 user2 r7"
+< object
+
+> topic issue_14_user2_topic_g
+	+ issue 14 user2 q8
+	* green == blue => Nope!
+	- issue 14 user2 r8{topic=random}{weight=10}
+	* red == orange => No no!
+< topic
+
++ issue 14 user2 q9
+- issue 14 user2 r9<set ten=10>{topic=issue_14_user2_topic_h}
+
+> topic issue_14_user2_topic_h
+	+ issue 14 user2 q10
+	- issue 14 user2 r<get ten>
+< topic

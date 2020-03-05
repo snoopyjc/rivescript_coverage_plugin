@@ -1,0 +1,925 @@
+// Quiz implementation
+
+! version = 2.0
+
+// ! array quizzes = demo agile
+// ! array quizzes = agile
+
+// v0.92: Handle SME-editable quizzes and quizzes not visible
+// v0.93: Add 'show quiz' and refactor the code
+
+! array qresponse_right = Great!|Way to go!|Fabulous!|Nice going!
+! array qresponse_wrong = Sorry!|Nope!|Wrong!|Incorrect!
+! array qresponse_partial = Not quite right!|You almost got it!|You are close!
+
+// Not sure why this does not work - modified init_rs() to handle instead
+// > begin
+//        + request
+//        - <call>initq</call>{ok}
+// < begin
+
+// Find all the quizzes and add them to the 'quizzes' array
+> object initq python
+    #print('initq')
+    #init_quizzes = rs.get_variable('init_quizzes')
+    #if init_quizzes == 1:
+        #return
+    import re
+    all_quizzes = []        # v0.92
+    quizzes = []
+    _ans = re.compile('_a[0-9]+$')
+    for quiz in rs._array:
+        if quiz.startswith('quiz_') and not re.search(_ans, quiz):
+            name = quiz.replace('quiz_', '')
+            all_quizzes.append(name)        # v0.92
+            vis = rs.get_variable(f'quiz_{name}_visible')       # v0.92
+            if vis != '0' and vis != 0:     # v0.92
+                quizzes.append(name)        # v0.92
+            #print(f'initq: found {quiz}')
+        #else:
+            #print(f'initq: skipping {quiz}')
+    all_quizzes.sort()      # v0.92
+    rs._array['all_quizzes'] = all_quizzes      # v0.92
+    quizzes.sort()
+    rs._array['quizzes'] = quizzes
+    #rs.set_variable('init_quizzes', 1)
+< object
+
++ [*] (@quizzes) quiz [*]{weight=3}
+- <call>startq <star></call>
+
++ [*] quiz [*] (@quizzes) [*]{weight=3}
+- <call>startq <star></call>
+
++ [*] (@all_quizzes) quiz [*]{weight=4}
+- <call>startq <star></call>                        // v1.00: startq now checks
+// v1.00 * <get isSME> eq y => <call>startq <star></call>
+// v1.00 * <get isSME> eq n => {@quiz}
+
++ [*] quiz [*] (@all_quizzes) [*]{weight=4}         // v1.00
+- <call>startq <star></call>                        // v1.00: startq now checks
+// v1.00 * <get isSME> eq y => <call>startq <star></call>
+// v1.00 * <get isSME> eq n => {@quiz}
+
++ [*] quiz [*]
+- <call>chooseq</call>
+
++ [*] quizzes [*]
+- <call>listq</call>
+
+// Ask user to choose a quiz to take
+> object chooseq python
+    attuid = rs.current_user()
+    bang = ''                      # v1.09
+    if rs.get_uservar(attuid, "fromGroup") == 'y':  # v1.09
+        bang = '!'                 # v1.09
+    quizzes = rs._array['quizzes']
+    if rs.get_uservar(attuid, 'isSME') == 'y':  # v0.92
+        quizzes = rs._array['all_quizzes']      # v0.92
+    if len(quizzes) == 0:
+        return "Sorry, no quizzes are defined at this time!"
+    elif len(quizzes) == 1:   # No choice
+        return rs._handlers["python"].call(rs, 'startq', attuid, quizzes)
+        #return rs._handlers["python"].call(rs, 'nextq', attuid, [])
+    else:
+        a = ord('a')
+        rs.set_uservar(attuid, "topic", "quiz_chooser")
+        return "Which quiz would you like to take?<br>" + '<br>'.join([bang + chr(a+i) + ') ' + quizzes[i].title() for i in range(len(quizzes))])
+< object
+
+// List all of the available quizzes # v0.92
+> object listq python
+    attuid = rs.current_user()
+    quizzes = rs._array['quizzes']
+    if rs.get_uservar(attuid, 'isSME') == 'y':
+        quizzes = rs._array['all_quizzes']
+    if len(quizzes) == 0:
+        return "Sorry, no quizzes are defined at this time!"
+    else:
+        def quiz_display(name):
+            vis = rs.get_variable(f'quiz_{name}_visible')
+            name = name.title()
+            if vis != '0' and vis != 0:
+                return name
+            return f'<span style="color: gray; font-style: italic;">{name}</span>'
+
+        return 'Quizzes: ' + ', '.join([quiz_display(quiz) for quiz in quizzes])
+< object
+
+> topic quiz_chooser
+        + *
+        - <call>pickq <star></call>
+
+	+ exit
+	- Exiting the quiz!{topic=random}
+
+	+ (q|qu|qui|quit)
+	@ exit
+< topic
+
+// Handle the quiz selection from the user and start the proper quiz
+> object pickq python
+    import re
+    attuid = rs.current_user()
+    quizzes = rs._array['quizzes']
+    if rs.get_uservar(attuid, 'isSME') == 'y':  # v0.92
+        quizzes = rs._array['all_quizzes']      # v0.92
+    choice = args[0]
+    try:
+        for qno in range(len(quizzes)):
+            quiz = quizzes[qno].lower()
+            if choice == quiz:
+                choice = chr(ord('a') + qno)
+                break
+        ndx = ord(choice) - ord('a')
+        quiz = quizzes[ndx]
+        #print(f'pickq: using {quiz} for {args[0]} ({choice})')
+        return rs._handlers["python"].call(rs, 'startq', attuid, [quiz])
+        #return rs._handlers["python"].call(rs, 'nextq', attuid, [])
+    except Exception as e:
+        print(f'pickq: Exception {e}')
+        rs.set_uservar(attuid, "topic", "random")
+        return "Exiting the quiz!"
+        
+< object
+
+// Initialize the quiz
+> object startq python
+    import logging
+    import re
+    from chatbot.services import send_message
+    #print(f'startq, args={args}')
+    ATT_BLUE = "#00A8E0"
+    botname = rs.get_variable("name")
+    log = logging.getLogger(botname)
+    master = rs.get_variable("master")  # master = <call>q jo2742 Joe</call>
+    mo = re.search(r'([a-z][a-z][0-9][0-9][0-9][0-9a-z])', master)  # attuid pattern
+    if mo:
+        master = mo.group(1)
+    else:
+        master = None
+
+    attuid = rs.current_user()
+    bang = ''                      # v0.95
+    if rs.get_uservar(attuid, "fromGroup") == 'y':  # v0.95
+        bang = '!'                 # v0.95
+    q_name = args[0].lower()                # v1.00
+    quiz_name = "quiz_" + q_name            # v1.00
+    # v1.00 if quiz_name == "quiz_":
+        # v1.00 rs.set_uservar(attuid, "quiz", None)
+        # v1.00 return "Sorry, no quizzes are defined at this time!"
+    quizzes = rs._array['quizzes']                          # v1.00
+    if rs.get_uservar(attuid, 'isSME') == 'y':              # v1.00
+        quizzes = rs._array['all_quizzes']                  # v1.00
+    if q_name not in quizzes:                               # v1.00
+        return rs._handlers["python"].call(rs, 'chooseq', attuid, [])   # v1.00
+    questions = rs._array[quiz_name]
+    #print(questions)
+    lenq = len(questions)
+    no_to_ask = lenq
+    try:
+        noq = rs.get_variable(f'{quiz_name}_noq')
+        no_to_ask = min(lenq, int(noq))
+    except Exception:
+        pass
+    #if len(args) >= 2:
+        #no_to_ask = min(lenq, int(args[1]))
+    points_each = 100 / no_to_ask
+    # Collect the answers and store in q_object
+    qno = 0
+    ano = 0
+    answers = []
+    while True:
+        ano += 1
+        if qno >= lenq:
+            break
+        answer_key = f'{quiz_name}_a{ano}'
+        if answer_key in rs._array:
+            answer_list = rs._array[answer_key]
+            answers.append(answer_list)
+            qno += 1
+        else:
+            #print(f'Missing {answer_key}')
+            msg = f'WARNING: quiz: missing answer_key {answer_key} for "{questions[qno]}" - skipping!'
+            log.warning(msg)
+            if master:
+                send_message(master, msg)
+            questions = questions[:qno] + questions[qno+1:]	# Remove the one with no answer
+            lenq -= 1
+            no_to_ask = min(lenq, no_to_ask)
+
+    q_object = {'quiz_name': quiz_name, 'left': no_to_ask, 'questions': questions, 'answers': answers, 'progress': 0, 'of': no_to_ask, 'score': 0, 'points_each': points_each}
+    # v1.09 rs.set_uservar(attuid, "quiz", q_object)
+    rs.set_uservar(attuid, "_quiz", q_object)       # v1.09: so 'get' doesn't show them the whole quiz
+    # Give them some instructions and make them hit "Next" to begin.  topic=quiz_next
+    user_quiz_name = quiz_name.replace('quiz_', '').title()
+    randomc = f' which have been randomly chosen from a set of {lenq}'
+    if lenq == no_to_ask:
+        randomc = ''
+    response = f'Welcome to quizzes by {botname}!  This {user_quiz_name} quiz has {no_to_ask} questions{randomc}.  I can understand pretty much any way you want to give me the answer(s), like "{bang}c", "{bang}b,c", "{bang}acd", "{bang}d and a", or a range like "{bang}a-d".  You can also ask me to give you a hint (by typing "{bang}hint") and I\'ll do my best.  Quit at any time by typing "{bang}quit".  If you get the question wrong, I will give you the right answer and I will try to explain the answer if I understand the topic.  Ok - here we go!<br>'
+    response += f'<br><span style="color: {ATT_BLUE};">Enter {bang}<u>n</u>ext to continue, or {bang}<u>q</u>uit to quit</span>'
+    rs.set_uservar(attuid, "topic", "quiz_next")
+    return response
+< object
+
+// Display the next (or first) question of the quiz
+> object nextq python
+    ATT_BLUE = "#00A8E0"
+    ATT_ORANGE = "#FF8C00"
+    from random import randrange
+    attuid = rs.current_user()
+    pre = ''                      # v0.95
+    if rs.get_uservar(attuid, "fromGroup") == 'y':  # v0.95
+        pre = '! followed by '                 # v0.95
+    # v1.09 q_object = rs.get_uservar(attuid, "quiz")
+    q_object = rs.get_uservar(attuid, "_quiz")      # v1.09
+    if not q_object or q_object == "undefined":
+        return
+    #print(f'nextq({attuid}, {q_object})')
+    left = q_object['left']
+    if not left:
+        score = int(round(q_object['score']))
+        rs.set_uservar(attuid, "topic", "random")
+        return f"<br>Thank you for taking the quiz!<br><span style='color: {ATT_ORANGE};'>Your score is {score}</span>"
+    # Pick a question, ask it, remember which one we asked, and which ones are left
+    questions = q_object['questions']
+    lenq = len(questions)
+    qno = randrange(0, lenq)
+    question = questions[qno]
+    answers = q_object['answers']
+    answer_list = answers[qno]
+    q_object['questions'] = questions[:qno] + questions[qno+1:]	# Remove the one we're asking
+    q_object['answers'] = answers[:qno] + answers[qno+1:]	# Remove the answer_list too
+    q_object['answer_list'] = answer_list
+    quiz_name = q_object['quiz_name']
+    quiz_title = quiz_name.replace('quiz_', '').title() + " Quiz"
+    #answer_key = f'{quiz_name}_a{qno+1}'
+    #answers = rs._array[answer_key]
+    #print(answers)
+    q_object['left'] = left - 1
+    q_object['question'] = question
+    q_object['qno'] = qno
+    q_object['progress'] += 1
+    # v1.09 rs.set_uservar(attuid, "quiz", q_object)
+    rs.set_uservar(attuid, "_quiz", q_object)   # v1.09
+    a = ord('a') - 1
+    progress = f"<br><span style='color: {ATT_ORANGE};'>{quiz_title} question: {q_object['progress']} of {q_object['of']}&nbsp;&nbsp;&nbsp;&nbsp;score: {int(round(q_object['score']))}</span>"
+    choices = f"Enter {pre}the letter of the correct answer"
+    if len(answer_list[0]) > 1:
+        choices = f"Enter {pre}the letters of the correct answers"
+    choices = f'<span style="color: {ATT_BLUE};">{choices}</span><br>'
+    rs.set_uservar(attuid, "topic", "quiz_topic")
+    return progress + '<p>' + question + '<br>' + choices + '<br>'.join([chr(a+i) + ') ' + answer_list[i] for i in range(1, len(answer_list))])
+< object
+
+> object ansq python
+    from random import choice
+    import re
+    from quizzes import Utils       # v1.04
+    ATT_BLUE = "#00A8E0"
+    GREEN = "#228b22"
+    RED = "#FF0000"
+    attuid = rs.current_user()
+    bang = ''                      # v0.95
+    if rs.get_uservar(attuid, "fromGroup") == 'y':  # v0.95
+        bang = '!'                 # v0.95
+    text = ' '.join(args)
+    # v1.09 q_object = rs.get_uservar(attuid, "quiz")
+    q_object = rs.get_uservar(attuid, "_quiz")      # v1.09
+    #quiz_name = q_object['quiz_name']
+    #qno = q_object['qno']
+    #answer_key = f'{quiz_name}_a{qno+1}'
+    #answers = rs._array[answer_key]
+    #print(answers)
+    answer_list = q_object['answer_list']
+    _no_punc = re.compile(r'[^a-z0-9_ -]')
+
+    def normalize_answer(ans, answer_list=None):
+        ans = ans.lower()
+        ans = re.sub(_no_punc, '', ans)     # v1.09
+        if answer_list:     # Allow them to give the full answer - convert to the letter
+            for ano in range(1, len(answer_list)):
+                answer = answer_list[ano].lower()
+                answer = re.sub(_no_punc, '', answer)     # v1.09
+                letter = chr(ord('a') + ano - 1) + ' '
+                ans = re.sub(r'\b' + re.escape(answer), letter, ans)
+            # v1.04: If the answer contains an integer, and their answer matches that number, then substitute the letter
+            # v1.09 digits = ans.replace('#', '').strip()
+            digits = ans.strip()        # v1.09: '#' is stripped out above
+            if digits.isdigit():
+                for ano in range(1, len(answer_list)):
+                    answer = answer_list[ano]
+                    letter = chr(ord('a') + ano - 1)
+                    if re.search(r'\b' + digits + r'\b', answer):
+                        ans = letter
+                        break
+        ans = ans.strip()
+        if ans == 'all' or ans == "all of them":
+            ans = "a-" + chr(len(answer_list) + ord('a') - 2)
+        ans = ans.replace(' and ', ',')
+        ans = ans.replace(' & ', ',')
+        ans = ans.replace(' &', ',')
+        ans = ans.replace('& ', ',')
+        ans = ans.replace('&', ',')
+        ans = ans.replace(' - ', '-')
+        ans = ans.replace(' -', '-')
+        ans = ans.replace('- ', '-')
+        ans = ans.replace(', ', ',')
+        ans = ans.replace('  ', ' ')
+        ans = ans.replace(' ', ',')
+        ans = ans.replace(',,,', ',')
+        ans = ans.replace(',,', ',')
+        ans = ans.replace('(', '')
+        ans = ans.replace(')', '')
+        while True:
+            ans2 = re.sub(r'([a-z])([a-z])', r'\1,\2', ans)
+            if ans2 == ans:
+                break
+            ans = ans2
+
+        ansl = ans.split(',')
+        ansl.sort()
+        if len(ansl) >= 2:
+            i = 0
+            while True:
+                if i >= len(ansl):
+                    break
+                made_change = False
+                if len(ansl[i]) == 1:
+                    io = ord(ansl[i])
+                    j = 0
+                    for j in range(i+1, len(ansl)):
+                        if len(ansl[j]) == 1 and ord(ansl[j]) == io + (j-i):
+                            continue
+                        break
+                    else:
+                        j += 1
+                    #print(f'{ansl[i]}: i={i}, j={j}')
+                    if j > (i+2):
+                        ansl[i] = f'{ansl[i]}-{ansl[j-1]}'  # a,b,c,d => a-d
+                        ansl = ansl[:i+1] + ansl[j:]
+                        made_change = True
+                    if i+1 < len(ansl) and len(ansl[i+1]) == 3 and io+1 == ord(ansl[i+1][0]):
+                        ansl[i] = f'{ansl[i]}-{ansl[i+1][2]}'    # a,b-d => a-d
+                        ansl = ansl[:i+1] + ansl[i+2:]
+                        made_change = True
+                elif len(ansl[i]) == 3:
+                    io = ord(ansl[i][2])
+                    j = 0
+                    for j in range(i+1, len(ansl)):
+                        if len(ansl[j]) == 1 and ord(ansl[j]) == io + (j-i):
+                            continue
+                        break
+                    else:
+                        j += 1
+                    #print(f'{ansl[i]}: i={i}, j={j}')
+                    if j > (i+1):
+                        ansl[i] = f'{ansl[i][0]}-{ansl[j-1]}'  # a-c,d => a-d
+                        ansl = ansl[:i+1] + ansl[j:]
+                        made_change = True
+                    if i+1 < len(ansl) and len(ansl[i+1]) == 3 and io+1 == ord(ansl[i+1][0]):
+                        ansl[i] = f'{ansl[i][0]}-{ansl[i+1][2]}'    # a-c,d-e => a-e
+                        ansl = ansl[:i+1] + ansl[i+2:]
+                        made_change = True
+                if not made_change:
+                    i += 1
+        return ','.join(ansl)
+
+    def ask_angie(rs, attuid, question):
+        last_match = rs.last_match(attuid)      # Save across reply call for logging
+        topic = rs.get_uservar(attuid, "topic")
+        rs.set_uservar(attuid, "topic", "random")
+        question = Utils.replace_symbols(question)
+        reply = rs.reply(attuid, question)
+        rs._brain._current_user = attuid       # rs.reply clears it so put it back!
+        trigger = rs.last_match(attuid)
+        rs.set_uservar(attuid, "topic", topic)
+        rs.set_uservar(attuid, "__lastmatch__", last_match)
+        if trigger == '*':
+            reply = None
+        return reply
+
+    def answer_set(answer):
+        result = set()
+        asplit = answer.split(',')
+        for a in asplit:
+            if len(a) == 1:
+                result.add(ord(a))
+            elif len(a) == 3:   # range
+                for c in range(ord(a[0]), ord(a[2])+1):
+                    result.add(c)
+        return result
+
+    def is_partially_correct(their_answer, our_answer):
+        """Returns True if their answer overlaps our answer at all"""
+        theirs = answer_set(their_answer)
+        ours = answer_set(our_answer)
+        if (theirs & ours):
+            return True
+        return False
+
+    their_answer = normalize_answer(text, answer_list=answer_list)
+    our_answer = normalize_answer(answer_list[0])
+    #print(f'Given "{text}", checking "{their_answer}" vs "{our_answer}"')
+    if their_answer == our_answer:
+        # Correct answer
+        responses = rs._array['qresponse_right']
+        q_object['score'] += q_object['points_each']
+        response = f'<span style="color: {GREEN};">{choice(responses)}</span>'
+    else:
+        reply = ask_angie(rs, attuid, q_object['question'])
+        if not reply:
+            if len(our_answer) == 1:    # Single answer
+                ano = ord(our_answer) - ord('a') + 1
+                answer = answer_list[ano]
+                reply = ask_angie(rs, attuid, answer)
+        responses = (rs._array['qresponse_wrong'], rs._array['qresponse_partial'])[is_partially_correct(their_answer, our_answer)]
+        response = f'<span style="color: {RED};">{choice(responses)}</span> The correct answer is {our_answer.replace(",", ", ")}'
+        if reply:
+            response += '<br>' + reply
+
+    response += f'<br><span style="color: {ATT_BLUE};">Enter {bang}<u>n</u>ext to continue, or {bang}<u>q</u>uit to quit</span>'
+    # v1.09 rs.set_uservar(attuid, "quiz", q_object)
+    rs.set_uservar(attuid, "_quiz", q_object)   # v1.09
+    return response
+< object
+
+// Give them a hint if they ask for it
+> object hintq python
+    from random import choice
+    attuid = rs.current_user()
+    # v1.09 q_object = rs.get_uservar(attuid, "quiz")
+    q_object = rs.get_uservar(attuid, "_quiz")  # v1.09
+    answer_list = q_object['answer_list']
+    answer_letters = [chr(ord('a')-1+i) for i in range(1, len(answer_list))]
+    answer_set = set(answer_letters)
+    for valid_answer in answer_list[0].split(','):
+        if len(valid_answer) == 3 and valid_answer[1] == '-':    # a-d  # v0.95
+            for a in range(ord(valid_answer[0]), ord(valid_answer[2])+1):
+                answer_set.remove(chr(a))
+        else:                                                   # v0.95
+            for v in valid_answer:                              # v0.95
+                answer_set.remove(v)                            # v0.95
+
+    if not answer_set:      # None left
+        return choice(("I don't see any wrong answers!", "They all look pretty good to me!", "I'm not spotting anything wrong!"))
+    outs = ["I would rule out {}", "{} doesn't look right to me", "I don't think it's {}", "It's probably not {}"]
+    return choice(outs).format(choice(list(answer_set)))
+< object
+
+> topic quiz_topic
+	+ *
+	- <call>ansq <star></call>{topic=quiz_next}
+
+        + [*] hint [*]
+        - <call>hintq</call>
+
+        + [*] help [*]
+        @ hint
+
+	+ [*] tip [*]
+	@ hint
+
+        + what do you think [<bot name>]
+        - <call>hintq</call> <get nick>
+        
+        + what would you [say|answer|put] [<bot name>]
+        @ what do you think
+
+        + [what is the] answer [<bot name>]
+        @ what do you think
+
+        + [*] not [*] sure [<bot name>]
+        - Do you want a hint?
+
+        + (@yes)
+        % do you want a hint
+        @ hint
+
+        + (@no)
+        % do you want a hint
+        - Ok, give it your best shot!
+        - Ok, please take an educated guess!
+
+	+ exit
+	- Exiting the quiz!{topic=random}
+
+	+ (q|qu|qui|quit)
+	@ exit
+
+        + quiz [*]          // v1.08
+        - You're already in a quiz - please enter the correct answer or <u>q</u>uit
+< topic
+
+> topic quiz_next inherits random
+        // 'n' is sub to 'no'
+	+ (n|no|ne|nex|next)
+	- <call>nextq</call>
+
+	+ exit
+	- Exiting the quiz!{topic=random}
+
+	+ (q|qu|qui|quit)
+	@ exit
+
+	// v1.02: Added based on user test results
+        + [*] quiz [*]      // v1.09: 'get quiz' was matching the '[*] quiz [*]' above and not this
+	- You're already in a quiz.  Type <code><u>n</u>ext</code> to continue, or type <code><u>q</u>uit</code> to quit.
+< topic
+
+// v0.92: New commands for SMEs to work with quizzes
+
++ add quiz *{weight=88888}
+* <get isSME> eq y => <call>addq <star></call>
+* <get isSME> eq n => {@_default}
+
++ show quiz *{weight=88888}
+* <get isSME> eq y => <call>showq <star></call>
+* <get isSME> eq n => {@_default}
+
++ edit quiz *{weight=88888}
+* <get isSME> eq y => <call>editq <star></call>
+* <get isSME> eq n => {@_default}
+
++ copy quiz *{weight=88888}
+* <get isSME> eq y => <call>copyq <star></call>
+* <get isSME> eq n => {@_default}
+
++ delete quiz *{weight=88888}
+* <get isSME> eq y => <call>deleteq <star></call>
+* <get isSME> eq n => {@_default}
+
++ publish quiz *{weight=88888}
+* <get isSME> eq y => <call>publishq 1 <star></call>
+* <get isSME> eq n => {@_default}
+
++ unpublish quiz *{weight=88888}
+* <get isSME> eq y => <call>publishq 0 <star></call>
+* <get isSME> eq n => {@_default}
+
++ rename quiz [from] (@all_quizzes) to *{weight=88889}
+* <get isSME> eq y => <call>renameq</call>
+* <get isSME> eq n => {@_default}
+
++ unlock quiz *{weight=88888}
+* <get isSME> eq y => <call>unlockq <star></call>
+* <get isSME> eq n => {@_default}
+
++ (add|copy|delete|edit|publish|unpublish|show|unlock) quiz{weight=4}
+* <get isSME> eq y => Use: <star> quiz <i>NAME</i>
+* <get isSME> eq n => {@_default}
+
++ rename quiz [*]{weight=88888}
+* <get isSME> eq y => Use: rename quiz from <i>OLD_NAME</i> to <i>NEW_NAME</i>
+* <get isSME> eq n => {@_default}
+
+> object addq python
+    from quizzes import Quiz, Utils
+    from contextlib import suppress # v0.93
+
+    name = Quiz.normalize_name(' '.join(args))
+    with suppress(FileNotFoundError):   # v0.93
+        if Utils.quiz_exists(rs, name):
+            return f"Sorry, quiz {name.title()} already exists - try: edit quiz {name}"
+
+    attuid = rs.current_user()
+    bang = ''                      # v0.95
+    if rs.get_uservar(attuid, "fromGroup") == 'y':  # v0.95
+        bang = '!'                 # v0.95
+
+    try:                # v0.93
+        Utils.lock_quiz(rs, attuid, name)
+    except PermissionError as p:
+        return p.replace(' edited ', ' added ')
+
+    # v1.09 rs.set_uservar(attuid, "quiz_in_play", name)
+    rs.set_uservar(attuid, "_quiz_in_play", name)   # v1.09
+    rs.set_uservar(attuid, "topic", "quiz_add")
+    return f"Paste in the entire quiz, including the number of questions to ask at a time. Mark correct answers with ^.  e.g.<br>&nbsp;{bang}to_ask=3<br>&nbsp;1. Question 1<br>&nbsp;  a) Q1 Wrong answer a<br>&nbsp; ^b) Q1 Correct answer b<br>&nbsp;  c) Q1 Wrong answer c<br>&nbsp;2. Question 2<br>&nbsp;  ..."
+< object
+
+> topic quiz_add
+	+ *
+	- <call>addqq <star></call>{topic=random}
+< topic
+
+> object addqq python
+    from quizzes import Quiz, Utils
+    attuid = rs.current_user()
+    # v1.09 name = rs.get_uservar(attuid, "quiz_in_play")
+    name = rs.get_uservar(attuid, "_quiz_in_play")  # v1.09
+    if not Utils.quiz_still_locked(rs, attuid, name):
+        return f'Sorry, quiz {name.title()} was unlocked by another SME'
+    msg = rs.get_uservar(attuid, "orig_msg")
+    msg = msg.replace('<br>', '\n')
+    quiz = Quiz.from_str(name, msg)
+    q = len(quiz.question_list)
+    if args[0] == 'q' or args[0] == 'quit' or args[0] == 'exit':
+        result = "Quiz unchanged.  Exiting the quiz editor!"
+    elif not q or (q == 1 and not quiz.question_list[0].answer_list):
+        result = "Sorry, no questions were found for the quiz. Exiting the quiz editor!"
+    else:
+        unpublished = "unpublished "
+        unp2 = f' Type "publish quiz {name}" to activate it.'
+        if quiz.visible:
+            unpublished = ''
+            unp2 = ''
+        quiz.store()
+        dt = rs.get_variable('datetime')        # v0.95
+        u = rs.get_uservar(attuid, '__undo__')  # v0.95
+        u.save_to_undo('quiz', dt, details=f'add {name}')    # v0.95
+        u.clear_redo()                          # v0.95: No more redo after a quiz operation
+        rs.load_file(quiz.filename)
+        rs.sort_replies()
+        rs._handlers["python"].call(rs, 'initq', attuid, [])
+        rs.set_variable('reload_menus', True)
+        noq = ''
+        if quiz.noq:
+            noq = f', {quiz.noq} of them will be asked randomly'
+        result = f'Added {unpublished}quiz {name.title()} with {q} questions{noq}.  Type "quiz {name}" to try it.{unp2}'
+
+    Utils.unlock_quiz(rs, name)     # v0.93
+    # v1.09 rs.set_uservar(attuid, "quiz_in_play", None)
+    rs.set_uservar(attuid, "_quiz_in_play", None)   # v1.09
+    return result
+< object
+
+> object showq python
+    from quizzes import Quiz, Utils
+
+    name = Quiz.normalize_name(' '.join(args))
+    try:            # v0.93
+        Utils.quiz_exists(rs, name)
+    except FileNotFoundError as f:
+        return f
+
+    quiz = Quiz(name)
+    quiz.load()
+    quiz_text = str(quiz)
+    #print(quiz_text)
+
+    return f"Here is the text of the {name.title()} quiz: <br><br><font size='3'>{quiz_text}</font>"
+< object
+
+> object editq python
+    from quizzes import Quiz, Utils
+
+    name = Quiz.normalize_name(' '.join(args))
+    try:            # v0.93
+        Utils.quiz_exists(rs, name)
+    except FileNotFoundError as f:
+        return f
+
+    attuid = rs.current_user()
+
+    try:                # v0.93
+        Utils.lock_quiz(rs, attuid, name)
+    except PermissionError as p:
+        return p
+
+    quiz = Quiz(name)
+    quiz.load()
+    quiz_text = str(quiz)
+    bang = ''                                       # v0.95
+    if rs.get_uservar(attuid, "fromGroup") == 'y':  # v0.95
+        quiz_text = '!' + quiz_text                 # v0.95
+        bang = '!'
+
+    # v1.09 rs.set_uservar(attuid, "quiz_in_play", name)
+    rs.set_uservar(attuid, "_quiz_in_play", name)   # v1.09
+    rs.set_uservar(attuid, "topic", "quiz_edit")
+    return f"Here is the text of the {name.title()} quiz.  Copy, edit, and paste it when you are done, or enter {bang}<u>q</u>uit to cancel:<br><br><font size='2'>{quiz_text}</font>"
+< object
+
+> topic quiz_edit
+	+ *
+	- <call>editqq <star></call>{topic=random}
+< topic
+
+> object editqq python
+    from quizzes import Quiz, Utils
+    attuid = rs.current_user()
+    # v1.09 name = rs.get_uservar(attuid, "quiz_in_play")
+    name = rs.get_uservar(attuid, "_quiz_in_play")      # v1.09
+    if not Utils.quiz_still_locked(rs, attuid, name):
+        return f'Sorry, quiz {name.title()} was unlocked by another SME'
+
+    msg = rs.get_uservar(attuid, "orig_msg")
+    msg = msg.replace('<br>', '\n')
+    quiz = Quiz.from_str(name, msg)
+    q = len(quiz.question_list)
+    if not q and (quiz.visible or quiz.noq):            # Allow them to set visible or noq only
+        new_quiz = quiz
+        quiz = Quiz(name)
+        quiz.load()
+        quiz.visible = new_quiz.visible
+        quiz.noq = new_quiz.noq
+        q = len(quiz.question_list)
+    if args[0] == 'q' or args[0] == 'quit' or args[0] == 'exit':
+        result = "Quiz unchanged.  Exiting the quiz editor!"
+    elif not q or (q == 1 and not quiz.question_list[0].answer_list):
+        result = "Sorry, no questions were found for the quiz. Quiz unchanged.  Exiting the quiz editor!"
+    else:
+        unpublished = "unpublished "
+        unp2 = f' Type "publish quiz {name.title()}" to activate it.'
+        if quiz.visible:
+            unpublished = ''
+            unp2 = ''
+        dt = rs.get_variable('datetime')        # v0.95
+        u = rs.get_uservar(attuid, '__undo__')  # v0.95
+        u.backup_file(quiz.filename, dt)        # v0.95
+        quiz.store()
+        u.save_to_undo('quiz', dt, details=f'edit {name}')    # v0.95
+        u.clear_redo()                          # v0.95: No more redo after a quiz operation
+        rs.load_file(quiz.filename)
+        rs.sort_replies()
+        rs._handlers["python"].call(rs, 'initq', attuid, [])
+        rs.set_variable('reload_menus', True)
+        noq = ''
+        if quiz.noq:
+            noq = f', {quiz.noq} of them will be asked randomly'
+        result = f'Edited {unpublished}quiz {name.title()} with {q} questions{noq}.  Type "quiz {name}" to try it.{unp2}'
+
+    Utils.unlock_quiz(rs, name) # v0.93
+    # v1.09 rs.set_uservar(attuid, "quiz_in_play", None)
+    rs.set_uservar(attuid, "_quiz_in_play", None)   # v1.09
+    rs.set_uservar(attuid, "topic", "random")
+    return result
+< object
+
+> object publishq python
+    from quizzes import Quiz, Utils
+
+    pub_un = args[0]
+    name = Quiz.normalize_name(' '.join(args[1:]))
+    try:            # v0.93
+        Utils.quiz_exists(rs, name)
+    except FileNotFoundError as f:
+        return f
+
+    attuid = rs.current_user()
+
+    try:                # v0.93
+        Utils.try_lock_quiz(rs, attuid, name)
+    except PermissionError as p:
+        return p
+
+    dt = rs.get_variable('datetime')        # v0.95
+    u = rs.get_uservar(attuid, '__undo__')  # v0.95
+    quiz = Quiz(name)
+    quiz.load()
+    if pub_un == '1':
+        published = "Published"
+        quiz.visible = True
+        pub = 'publish'                     # v0.95
+    else:
+        published = "Unpublished"
+        quiz.visible = False
+        pub = 'unpublish'                   # v0.95
+
+    quiz.store()
+    u.save_to_undo('quiz', dt, details=f'{pub} {name}')    # v0.95
+    u.clear_redo()                          # v0.95: No more redo after a quiz operation
+
+    rs.load_file(quiz.filename)
+    rs.sort_replies()
+    rs._handlers["python"].call(rs, 'initq', attuid, [])
+    rs.set_variable('reload_menus', True)
+    return f'{published} quiz {name.title()}'
+< object
+
+> object copyq python
+    from quizzes import Quiz, Utils
+
+    name = Quiz.normalize_name(' '.join(args))
+    try:            # v0.93
+        Utils.quiz_exists(rs, name)
+    except FileNotFoundError as f:
+        return f
+
+    attuid = rs.current_user()
+    try:                # v0.93
+        Utils.try_lock_quiz(rs, attuid, name)
+    except PermissionError as p:
+        return p
+
+    dt = rs.get_variable('datetime')        # v0.95
+    u = rs.get_uservar(attuid, '__undo__')  # v0.95
+    quiz = Quiz(name)
+    quiz.load()
+    old_name = name
+    new_name = name + '_copy'
+    quiz.name = new_name
+    quiz.visible = False
+    quiz.store()
+    u.save_to_undo('quiz', dt, details=f'copy {name}')    # v0.95
+    u.clear_redo()                          # v0.95: No more redo after a quiz operation
+    rs.load_file(quiz.filename)
+    rs.sort_replies()
+
+    rs._handlers["python"].call(rs, 'initq', attuid, [])
+    rs.set_variable('reload_menus', True)
+    return f'Copied quiz {old_name.title()} to {new_name.title()} which is unpublished.  Use "edit quiz {new_name}" to edit it.'
+< object
+
+> object deleteq python
+    from quizzes import Quiz, Utils
+
+    name = Quiz.normalize_name(' '.join(args))
+    try:            # v0.93
+        Utils.quiz_exists(rs, name)
+    except FileNotFoundError:
+        return f"Sorry, quiz {name.title()} doesn't exist"
+
+    attuid = rs.current_user()
+    try:                # v0.93
+        Utils.try_lock_quiz(rs, attuid, name)
+    except PermissionError as p:
+        return p
+
+    dt = rs.get_variable('datetime')        # v0.95
+    u = rs.get_uservar(attuid, '__undo__')  # v0.95
+    quiz = Quiz(name)
+    u.backup_file(quiz.filename, dt)        # v0.95
+    quiz.delete()
+    u.save_to_undo('quiz', dt, details=f'delete {name}')    # v0.95
+    u.clear_redo()                          # v0.95: No more redo after a quiz operation
+
+    qn = f'quiz_{name}'
+    #for quiz in list(rs._array):
+        #if quiz.startswith(qn):
+            #del rs._array[quiz]
+    rs._array.pop(qn, None)
+
+    rs.sort_replies()
+    rs._handlers["python"].call(rs, 'initq', attuid, [])
+    rs.set_variable('reload_menus', True)
+    return f'Deleted quiz {name.title()}'
+< object
+
+> object renameq python
+    from quizzes import Quiz, Utils
+    import re
+    from contextlib import suppress # v0.93
+
+    attuid = rs.current_user()
+    orig_msg = rs.get_uservar(attuid, "orig_msg").lower()
+    mo = re.match(r'\s*rename\s+quiz(?:\s+from)?\s+([^ ]+)\s+to\s+(.*)$', orig_msg)
+    name = Quiz.normalize_name(mo.group(1))
+    try:            # v0.93
+        Utils.quiz_exists(rs, name)
+    except FileNotFoundError as f:
+        return f
+
+    new_name = Quiz.normalize_name(mo.group(2))
+    with suppress(FileNotFoundError):   # v0.93
+        if Utils.quiz_exists(rs, new_name):
+            return f'Sorry, quiz {new_name.title()} already exists.  Use "delete quiz {new_name}" to delete it first.'
+
+    try:                # v0.93
+        Utils.try_lock_quiz(rs, attuid, name)
+    except PermissionError as p:
+        return p
+
+    dt = rs.get_variable('datetime')        # v0.95
+    u = rs.get_uservar(attuid, '__undo__')  # v0.95
+    quiz = Quiz(name)
+    quiz.load()
+    quiz.rename_and_store(new_name)
+    u.save_to_undo('quiz', dt, details=f'rename {name},{new_name}')    # v0.95
+    u.clear_redo()                          # v0.95: No more redo after a quiz operation
+
+    qn = f'quiz_{name}'
+    #for quiz in list(rs._array):
+        #if quiz.startswith(qn):
+            #del rs._array[quiz]
+    rs._array.pop(qn, None)
+
+    rs.load_file(quiz.filename)
+    rs.sort_replies()
+    rs._handlers["python"].call(rs, 'initq', attuid, [])
+    rs.set_variable('reload_menus', True)
+    return f'Renamed quiz from {name.title()} to {new_name.title()}'
+< object
+
+> object unlockq python
+    from quizzes import Quiz, Utils
+
+    name = Quiz.normalize_name(' '.join(args))
+    try:            # v0.93
+        Utils.quiz_exists(rs, name)
+    except FileNotFoundError as f:
+        return f
+
+    attuid = rs.current_user()
+    locker = Utils.unlock_quiz(rs, name)
+    extra = ''
+    if locker and locker != attuid:
+        extra = f'.  Please let {Utils.qto(locker)} know you unlocked their edit.'
+    return f"Quiz {name.title()} is now unlocked{extra}"
+< object
+
+
+// v1.02: Added based on user test results
++ test [me] [<bot name>]{weight=2}      // v1.04
+@ quiz

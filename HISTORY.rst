@@ -29,3 +29,7 @@ History
 * Fix Issue #7, #8
 
  
+1.0.0 (2020-02-28)
+++++++++++++++++++
+
+* Add syntax highlighting, fixup some documentation issues, and fix issues #9-#14.

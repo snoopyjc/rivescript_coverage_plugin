@@ -69,7 +69,7 @@ local development.
 
 Now you can make your changes locally.
 
-4. When you're done making changes, check that your changes pass style and unit
+4. When you're done making changes, check that your changes pass unit
    tests, including testing other Python versions with tox::
 
     $ tox
@@ -95,7 +95,7 @@ Before you submit a pull request, check that it meets these guidelines:
 2. If the pull request adds functionality, the docs should be updated. Put
    your new functionality into a function with a docstring, and add the
    feature to the list in README.rst.
-3. The pull request should work for Python 2.6, 2.7, and 3.3, and for PyPy.
+3. The pull request should work for Python 3.6, 3.7, and for PyPy.
    Check https://travis-ci.org/snoopyjc/rivescript_coverage_plugin 
    under pull requests for active pull requests or run the ``tox`` command and
    make sure that the tests pass for all supported Python versions.

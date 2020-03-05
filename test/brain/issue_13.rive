@@ -1,0 +1,11 @@
+// Issue #13: No match found if there is a ' in the question
+
++ issue 13 single quote *
+- issue 13 single quote response
+
++ issue 13 double quote *
+- issue 13 double quote response
+
++ issue 13 both quotes *
+- issue 13 both quotes response
+

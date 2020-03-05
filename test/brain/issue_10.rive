@@ -1,0 +1,11 @@
+// Issue #10: Object ending with a line of whitespace messes up line numbers afterwards
+
+! version = 2.0
+
+> object issue_10 python
+    return "Issue 10 response"
+        
+< object
+
++ issue 10
+- <call>issue_10</call>

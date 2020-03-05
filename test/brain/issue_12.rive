@@ -1,0 +1,12 @@
+
+// Issue 12: Responses with weights or topics were sometimes not being marked as executed
+
++ issue 12							// comment
+- issue 12 response 1{weight=4}
+- issue 12 response 2 {weight=3}
+- issue 12 response 3	{weight=3}
+- issue 12 response 4{weight=3}			// comment on response
+- issue 12 response 5{weight=4}	
+- issue 12 response 6{weight=4}{topic=random}
+- issue 12 response 7{topic=random}{weight=4}
+- issue 12 response 8 - unweighted

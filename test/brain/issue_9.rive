@@ -1,0 +1,24 @@
+// Issue 9: The ‘+’ is matched, but not the ‘-‘ or ‘^’ for local concat = newline
+
++ issue 9 default
+- Issue 9
+^ default response without space
+
+! local concat = newline 
+
++ issue 9 newline
+- Issue 9
+^ response with newline
+
+! local concat = space
+
++ issue 9 space
+- Issue 9
+^ response with space
+
+! local concat = none
+
++ issue 9 none
+- Issue 9
+^ response without space
+
