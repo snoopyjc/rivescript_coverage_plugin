@@ -1,4 +1,5 @@
 # VIM artifacts
+installit.sh
 *.swp
 *~
 
@@ -34,6 +35,7 @@ nosetests.xml
 coverage_report.out
 htmlcov
 test/htmlcov
+test/_rs_streams_
 
 # Translations
 *.mo

@@ -1,0 +1,6 @@
+// Issue #15: Calls to rs.load_file() not tracked
+
+! version = 2.0
+
++ issue 15
+- 15 reply

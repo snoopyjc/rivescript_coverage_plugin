@@ -33,3 +33,8 @@ History
 ++++++++++++++++++
 
 * Add syntax highlighting, fixup some documentation issues, and fix issues #9-#14.
+
+1.1.0 (2020-03-29)
+++++++++++++++++++
+
+* Fix issues #15-#18 and #21.

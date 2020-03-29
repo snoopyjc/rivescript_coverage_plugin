@@ -1,18 +1,24 @@
-Name                                 Stmts   Miss  Cover
---------------------------------------------------------
-brain/issue_10.rive                      3      0   100%
-brain/issue_11.rive                     18      3    83%
-brain/issue_12.rive                      9      0   100%
-brain/issue_13.rive                      6      0   100%
-brain/issue_14.rive                     64      8    88%
-brain/issue_3.rive                       0      0   100%
-brain/issue_6.rive                      12      0   100%
-brain/issue_7.rive                       7      5    29%
-brain/issue_8.rive                      20      4    80%
-brain/issue_9.rive                      12      0   100%
-brain/star.rive                          5      0   100%
-brain/test.rive                         44      4    91%
-rive.py                                 12      0   100%
-test_rivescript_coverage_plugin.py      82      0   100%
---------------------------------------------------------
-TOTAL                                  294     24    92%
+Name                                                          Stmts   Miss  Cover
+---------------------------------------------------------------------------------
+_rs_streams_/s-test_rivescript_coverage_plugin_165.rive           2      0   100%
+_rs_streams_/s-test_rivescript_coverage_plugin_175.rive           2      0   100%
+_rs_streams_/s-test_rivescript_coverage_plugin_175_001.rive       2      0   100%
+_rs_streams_/s-test_rivescript_coverage_plugin_192.rive           4      0   100%
+_rs_streams_/s-test_rivescript_coverage_plugin_30.rive            2      0   100%
+brain/issue_10.rive                                               3      0   100%
+brain/issue_11.rive                                              18      3    83%
+brain/issue_12.rive                                               9      0   100%
+brain/issue_13.rive                                               6      0   100%
+brain/issue_14.rive                                              64      8    88%
+brain/issue_3.rive                                                0      0   100%
+brain/issue_6.rive                                               12      0   100%
+brain/issue_7.rive                                                7      5    29%
+brain/issue_8.rive                                               20      4    80%
+brain/issue_9.rive                                               12      0   100%
+brain/star.rive                                                   5      0   100%
+brain/test.rive                                                  44      4    91%
+issue_15.rive                                                     2      0   100%
+rive.py                                                          12      0   100%
+test_rivescript_coverage_plugin.py                              111      0   100%
+---------------------------------------------------------------------------------
+TOTAL                                                           337     24    93%

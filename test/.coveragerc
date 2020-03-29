@@ -7,3 +7,4 @@ show_parsing = False
 show_tracing = False
 show_startup = False
 clean_rs_objects = True
+capture_streams = True

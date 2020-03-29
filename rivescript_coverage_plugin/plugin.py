@@ -1,7 +1,7 @@
 """The RiveScript coverage plugin."""
 # Written by @snoopyjc 2020-01-16
-# Based on Coverage RiveScript Plugin by nedbat with changes by PamelaM
-VERSION="1.0.0"
+# Based on Coverage Plugin by nedbat with changes by PamelaM
+VERSION="1.1.0"
  
 # It's not pretty in places but it works!!
  
@@ -12,8 +12,6 @@ import sys
 import inspect
 import importlib
 import shutil
- 
-#import six
  
 import coverage.plugin
 from coverage.phystokens import source_token_lines as python_source_token_lines  # v1.0.0
@@ -31,8 +29,10 @@ SHOW_PARSING = False
 SHOW_TRACING = False
 SHOW_STARTUP = False
 CLEAN_RS_OBJECTS = True
+CAPTURE_STREAMS = True
 LOG_FILE_PATH = None
 RS_DIR = "_rs_objects_"     # Where we keep files that represent rivescript python object blocks
+STREAM_DIR = "_rs_streams_" # v1.1 Issue #16: Where we keep track of streams
 RS_PREFIX = "rs_obj_"
  
 class RiveScriptOptionsCapture:
@@ -43,16 +43,40 @@ class RiveScriptOptionsCapture:
         RiveScript._old_load_file = RiveScript.load_file
         RiveScript._old_say = RiveScript._say
         RiveScript._old_set_uservar = RiveScript.set_uservar        # v0.2.3
-        self.rs_initialized = False
+        RiveScript._old_stream = RiveScript.stream        # v1.1: Issue #16
+        RiveScript._old_deparse = RiveScript.deparse        # v1.1: Issue #21
+        if hasattr(RiveScript, "prepare_brain_transplant"): # v1.1: Support RiveScript v1.15+
+            RiveScript._old_prepare_brain_transplant = RiveScript.prepare_brain_transplant
+
+        # v1.1 self.rs_initialized = False
+        self.files_loaded = set()                       # v1.1: Issue #15
         self.debug_callback = None
         self._debug = False
+        self.got_streams = False                        # v1.1: Issue #16
         def _new_rs_init(rs_self, *args, **kwargs):
+            if SHOW_TRACING:                            # v1.1
+                print_log(f"_new_rs_init({args}, {kwargs})") # v1.1
+            rs_self._rcp_trigger_source = {}                   # v1.1
             for k in kwargs:
                 setattr(self, k, kwargs[k])
             rs_self._old_init(*args, **kwargs)
             self._debug = rs_self._debug
             rs_self._debug = True
             self.rs = rs_self
+
+        def _new_deparse(rs_self):                  # v1.1: Issue #21
+            rs_self._debug = self._debug
+            result = rs_self._old_deparse()
+            rs_self._debug = True
+            return result
+
+        def _new_prepare_brain_transplant(rs_self, **kwargs):   # v1.1: Support RiveScript v1.15+
+            if SHOW_TRACING:                            # v1.1
+                print_log(f"_new_prepare_brain_transplant({kwargs})") # v1.1
+            save_debug = self._debug
+            rs_self._old_prepare_brain_transplant(**kwargs)
+            self._debug = save_debug
+
         def _new_load_directory(rs_self, directory, ext=None):
             self.directory = directory
             if not ext:
@@ -60,20 +84,77 @@ class RiveScriptOptionsCapture:
             if type(ext) == str:
                 ext = [ext]
             self.ext = ext
-            self.rs_initialized = True
+            # v1.1 self.rs_initialized = True
             rs_self._old_load_directory(directory, ext)
  
         def _new_load_file(rs_self, filename):
             global executable_lines
-            fr = FileReporter(filename)
-            executable_lines[os.path.abspath(filename)] = fr.lines()      # Compute the set of executable lines, which in turn sets trigger_source for the file  v1.0.0: Save this information for later
+            if SHOW_TRACING:                            # v1.1
+                print_log(f"_new_load_file({filename})") # v1.1
+            fr = FileReporter(filename, rs_self)        # v1.1: Add 'rs_self'
+            abs_filename = os.path.abspath(filename)    # v1.1: Issue #15
+            self.files_loaded.add(abs_filename)         # v1.1: Issue #15
+            executable_lines[abs_filename] = fr.lines()      # Compute the set of executable lines, which in turn sets trigger_source for the file  v1.0.0: Save this information for later   v1.1: Issue #15
+            # v1.1 executable_lines[os.path.abspath(filename)] = fr.lines()      # Compute the set of executable lines, which in turn sets trigger_source for the file  v1.0.0: Save this information for later
             rs_self._old_load_file(filename)
+
+        def _new_stream(rs_self, string):               # v1.1: Issue #16
+            global executable_lines
+
+            if SHOW_TRACING:                            # v1.1
+                if len(string) > 70:                    # v1.1
+                    print_log(f"_new_stream({string[0:32]}...{string[-32:]})") # v1.1
+                else:                                   # v1.1
+                    print_log(f"_new_stream({string})")         # v1.1
+            if not self.got_streams:
+                shutil.rmtree(STREAM_DIR, ignore_errors=True)
+                self.got_streams = True
+            try:
+                os.mkdir(STREAM_DIR)
+            except Exception:
+                pass
+            stack = inspect.stack()
+            caller = inspect.getframeinfo(stack[1][0])
+            caller_fn = os.path.splitext(os.path.basename(caller.filename))[0]
+            fn_lno = f'{caller_fn}_{caller.lineno}'
+            for s in stack[2:]:
+                caller = inspect.getframeinfo(s[0])
+                #print(f'_new_stream: caller = {caller.filename}:{caller.lineno} def {caller.function}(...):\n{caller.code_context[0]}')
+                if 'site-packages' in caller.filename:
+                    break
+                s_fn = os.path.splitext(os.path.basename(caller.filename))[0]
+                if s_fn != caller_fn:
+                    fn_lno += f'-{s_fn}_{caller.lineno}'
+                    break
+
+            base_filename = os.path.join(STREAM_DIR, f"s-{fn_lno}")
+            filename = f'{base_filename}.rive'
+            count = 0
+            while True:
+                if os.path.isfile(filename):
+                    with open(filename, 'r', encoding="utf-8") as s:
+                        contents = s.read()[:-1]    # Eat the newline we appended
+                    if string == contents:
+                        break
+                else:
+                    with open(filename, 'w', encoding="utf-8") as s:
+                        s.write(string)
+                        s.write('\n')
+                    break
+                count += 1
+                filename = f'{base_filename}_{count:03d}.rive'
+
+            fr = FileReporter(filename, rs_self)
+            abs_filename = os.path.abspath(filename)
+            self.files_loaded.add(abs_filename)
+            executable_lines[abs_filename] = fr.lines()      # Compute the set of executable lines, which in turn sets trigger_source for the file
+            rs_self._old_stream(string)
  
         def _new_say(rs_self, message):
             if self.debug_callback:
                 if self._debug:
                     rs_self._old_say(message)
-                self.debug_callback(message)
+                self.debug_callback(rs_self, message)       # v1.1
             elif self._debug:
                 rs_self._old_say(message)
  
@@ -82,7 +163,10 @@ class RiveScriptOptionsCapture:
             of the code, so we can trace it.  Later we grab the trace data and remap it
             back to the '> object'
             """
-            os.makedirs(RS_DIR, exist_ok=True)
+            try:
+                os.mkdir(RS_DIR)
+            except Exception:
+                pass
             with open(os.path.join(RS_DIR, '__init__.py'), 'w') as f:
                 pass
             module = f'{RS_PREFIX}{name}'
@@ -112,27 +196,36 @@ class RiveScriptOptionsCapture:
  
         def _new_set_uservar(rs_self, user, name, value):        # v0.2.3
             rs_self._old_set_uservar(user, name, value)
-            if name == 'topic' and user == rs_self.current_user() and self.debug_callback is not None:
+            # v1.1 if name == 'topic' and user == rs_self.current_user() and self.debug_callback is not None:
+            if name == 'topic' and self.debug_callback is not None: # v1.1: Issue #18
+                if user != rs_self.current_user():                  # v1.1: Issue #18
+                    self.debug_callback(rs_self, f"Get reply to [{user}] ")  # v1.1: Issue #18
                 if SHOW_TRACING:
                     print_log(f"_new_set_uservar: topic = {value}")
-                self.debug_callback("Setting user's topic to " + value)
+                self.debug_callback(rs_self, "Setting user's topic to " + value)    # v1.1
  
         RiveScript.__init__ = _new_rs_init
         RiveScript.load_directory = _new_load_directory
         RiveScript.load_file = _new_load_file
         RiveScript._say = _new_say
         RiveScript.set_uservar = _new_set_uservar           # v0.2.3
+        if CAPTURE_STREAMS:                           # v1.1: Issue #16
+            RiveScript.stream = _new_stream           # v1.1: Issue #16
+        RiveScript.deparse = _new_deparse             # v1.1: Issue #21
+        if hasattr(RiveScript, "prepare_brain_transplant"): # v1.1: Support RiveScript v1.15+
+            RiveScript.prepare_brain_transplant = _new_prepare_brain_transplant
  
         PyRiveObjects.load = _new_load
  
 rs_options = RiveScriptOptionsCapture()     # Do the monkeypatch right away
  
-trigger_source = {}     # map from [topic:]trigger to (filename, lineno) or a list of them with a regexp of prev match
+# v1.1 trigger_source = {}     # map from [topic:]trigger to (filename, lineno) or a list of them with a regexp of prev match
 object_source = {}      # map from object name to (filename, lineno)
 rs_lexed = {}           # map from filename to Lexer
 rs_line_data = {}       # { filename: { lineno: None, ... }, ...}
 coverage_object = None
 executable_lines = {}   # v1.0.0: map from filename to set of executable lines of this file
+message_printed = False # v1.1: Only print the startup message once
  
 def get_trigger_source(rs, user, trigger, last_topic, last_reply):
     """Get the filename and line number of the trigger that last matched.  This is harder than is seems!"""
@@ -144,6 +237,7 @@ def get_trigger_source(rs, user, trigger, last_topic, last_reply):
         all_topics = get_topic_tree(rs, last_topic)     # Handle topic inheritance and includes
  
     last_reply_formatted = False
+    trigger_source = rs._rcp_trigger_source         # v1.1
     for topic in all_topics:
         tr = trigger
         if topic and topic != 'random':
@@ -233,33 +327,36 @@ def get_debug_option_value(curr_value, options, option_name):
 def handle_debugging_options(options, quiet=False):
     """Set global debugging flags based on configuration options"""
     global LOG_FILE_PATH, SHOW_PARSING, SHOW_TRACING, SHOW_STARTUP, CLEAN_RS_OBJECTS
+    global CAPTURE_STREAMS                              # v1.1
     #print("handle_debugging_options: %r" % options)
     LOG_FILE_PATH = get_debug_option_value(LOG_FILE_PATH, options, 'log_file_path')
     SHOW_PARSING = get_debug_option_value(SHOW_PARSING, options, 'show_parsing')
     SHOW_TRACING = get_debug_option_value(SHOW_TRACING, options, 'show_tracing')
     SHOW_STARTUP = get_debug_option_value(SHOW_STARTUP, options, 'show_startup')
     CLEAN_RS_OBJECTS = get_debug_option_value(CLEAN_RS_OBJECTS, options, 'clean_rs_objects')
+    CAPTURE_STREAMS = get_debug_option_value(CAPTURE_STREAMS, options, 'capture_streams')       # v1.1
     if not quiet and SHOW_STARTUP:
         print_log(f"--- RiveScript_coverage_plugin-{VERSION} started at %s ---" % datetime.datetime.now())      # v1.0.0
         print_log("Python Version: %s" % (sys.version,))
         print_log("RiveScript Version: %s" % (RiveScript.VERSION(),))
         print_log("command args  : %s" % (sys.argv,))
         print_log(f"Debug Options: show_startup = {SHOW_STARTUP}, show_parsing = {SHOW_PARSING}, show_tracing = {SHOW_TRACING}")   # v1.0.0
+        print_log(f"Options: clean_rs_objects = {CLEAN_RS_OBJECTS}, capture_streams = {CAPTURE_STREAMS}")   # v1.1
  
-def get_brain_dir():
-    """Get the Brain Directory that the RiveScript object is using.
-    It can take a fair amount of time before the RiveScript settings are fully
-    configured, so get_brain_dir() is called by file_tracer() until it
-    returns something.
-    Returns the path to the brain, None otherwise
-    """
- 
-    if rs_options.rs_initialized:
-        #if not rs_options._debug:
-            #raise RiveScriptPluginException("RiveScript debug option must be enabled!")
-        return rs_options.directory
- 
-    return None
+# v1.1 def get_brain_dir():
+# v1.1     """Get the Brain Directory that the RiveScript object is using.
+# v1.1     It can take a fair amount of time before the RiveScript settings are fully
+# v1.1     configured, so get_brain_dir() is called by file_tracer() until it
+# v1.1     returns something.
+# v1.1     Returns the path to the brain, None otherwise
+# v1.1     """
+# v1.1  
+# v1.1     if rs_options.rs_initialized:
+# v1.1         #if not rs_options._debug:
+# v1.1             #raise RiveScriptPluginException("RiveScript debug option must be enabled!")
+# v1.1         return rs_options.directory
+# v1.1  
+# v1.1     return None
  
  
 def filename_for_frame(frame):
@@ -354,8 +451,8 @@ class RiveScriptPlugin(
             print_log("RiveScriptPlugin.__init__()")            # v1.0.0
         #self.debug_checked = False
  
-        self.rs_brain_dir = None
-        self.rs_brain_abspath = None
+        # v1.1 self.rs_brain_dir = None
+        # v1.1 self.rs_brain_abspath = None
  
         self.source_map = {}
         self.user_value_defaults = dict(topic='random', last_topic='random', context='normal', last_reply='<undef>')   # v1.0.0
@@ -365,6 +462,8 @@ class RiveScriptPlugin(
         # v1.0.0 self.last_topic = 'random'      # v0.2.2
         # v1.0.0 self.context = 'normal'         # v0.2.2
         # v1.0.0 self.last_reply = '<undef>'
+        self.filename = 'stream()'               # v1.1: Issue #17
+        self.last_trigger_lineno = 0             # v1.1: Issue #17
  
     def get_user_value(self, name):     # v1.0.0: Issue #14
         if self.user in self.user_values:
@@ -384,7 +483,7 @@ class RiveScriptPlugin(
  
     def sys_info(self):
         return [
-            ("rs_brain_dir", self.rs_brain_dir),
+            # v1.1  ("rs_brain_dir", self.rs_brain_dir),
         ]
  
     def move_executed_rs_objects_to_rive(self, cd):
@@ -438,9 +537,10 @@ class RiveScriptPlugin(
         except Exception as e:
             print(f"Cannot clean up {RS_DIR}: {e}")
  
-    def debug_callback(self, message):
+    def debug_callback(self, rs, message):  # v1.1: add 'rs'
         """Handle the RiveScript debug message by figuring out which source line(s) were executed and marking same"""
-        global object_source
+        # v1.1 global object_source
+        global message_printed          # v1.1
         if SHOW_TRACING:
             if message.startswith(' ') or message.startswith('\t') or message.startswith('Line:') or message.startswith('Loading file') or \
                message.startswith('Parsing ') or message.startswith('Command:') or message.startswith('Sorting ') or message.startswith('Analyzing '):
@@ -448,7 +548,7 @@ class RiveScriptPlugin(
             else:
                 print_log(f'debug_callback({message})')
         if message == 'Found a match!':
-            fn_lno = get_trigger_source(rs_options.rs, self.user, self.last_trigger, self.get_user_value('last_topic'), self.get_user_value('last_reply'))
+            fn_lno = get_trigger_source(rs, self.user, self.last_trigger, self.get_user_value('last_topic'), self.get_user_value('last_reply')) # v1.1: Use passed 'rs'
             if fn_lno:
                 fn, lineno = fn_lno
                 self.filename = os.path.abspath(fn)
@@ -461,7 +561,7 @@ class RiveScriptPlugin(
                 else:
                     rs_line_data[self.filename] = {lineno: None}
                 # This is smart enough to just do it once:
-                lexer = Lexer(None, self.filename)
+                lexer = Lexer(None, self.filename, rs)          # v1.1: Add 'rs'
                 tokens = lexer.tokenize()
                 if lineno in lexer.lineno_to_token_index:
                     ndx = lexer.lineno_to_token_index[lineno] + 1
@@ -473,7 +573,7 @@ class RiveScriptPlugin(
                             break
                         ndx += 1
             elif SHOW_TRACING:                  # v1.0.0
-                print_log('debug_callback: ERROR: Didn\'t find trigger_source for "{self.last_trigger}"!')  # v1.0.0
+                print_log(f'debug_callback: ERROR: Didn\'t find trigger_source for "{self.last_trigger}"!')  # v1.1.0
         elif message.startswith('Get reply to ['):
             mo = re.match(RE.get_reply_to_user, message)
             if mo:
@@ -520,7 +620,7 @@ class RiveScriptPlugin(
             if mo:
                 reply = mo.group(1)
                 self.set_user_value('last_reply', reply)     # v0.2.1, v1.0.0
-                lexer = Lexer(None, self.filename)
+                lexer = Lexer(None, self.filename, rs)      # v1.1: Add 'rs'
                 tokens = lexer.tokenize()
                 if self.last_trigger_lineno in lexer.lineno_to_token_index:
                     ndx = lexer.lineno_to_token_index[self.last_trigger_lineno] + 1
@@ -607,7 +707,7 @@ class RiveScriptPlugin(
         elif message == 'Bot side matched!':    # last_reply matched the %previous
             self.prev_match = True
         elif message.startswith("Redirecting us to "):
-            lexer = Lexer(None, self.filename)
+            lexer = Lexer(None, self.filename, rs)      # v1.1: Add 'rs'
             tokens = lexer.tokenize()
             if self.last_trigger_lineno in lexer.lineno_to_token_index:
                 ndx = lexer.lineno_to_token_index[self.last_trigger_lineno] + 1
@@ -631,22 +731,24 @@ class RiveScriptPlugin(
             elif SHOW_TRACING:              # v1.0.0
                 print_log("debug_callback: ERROR: Message didn't match conditional pattern!")   # v1.0.0
         elif message.startswith("Interpreter initialized"):                                     # v1.0.0
-            try:                                                                                # v1.0.0
-                print(f"\nrivescript_coverage_plugin-{VERSION}", file=sys.__stdout__)           # v1.0.0: Print to real stdout even if redirected by pytest
-            except Exception:                                                                   # v1.0.0
-                print(f"rivescript_coverage_plugin-{VERSION}")                                  # v1.0.0
+            if not message_printed:                                                             # v1.1
+                try:                                                                            # v1.0.0
+                    print(f"\nrivescript_coverage_plugin-{VERSION}", file=sys.__stdout__)       # v1.0.0: Print to real stdout even if redirected by pytest
+                except Exception:                                                               # v1.0.0
+                    print(f"rivescript_coverage_plugin-{VERSION}")                              # v1.0.0
+                message_printed = True                                                          # v1.1
  
     def file_tracer(self, filename):
         if SHOW_STARTUP and not filename.endswith(".py"):
             print_log("file_tracer: %s" % filename)
-        if self.rs_brain_dir is None:
-            # Keep calling get_brain_dir until it returns the path to the brain, which it
-            # will only do after settings have been configured
-            self.rs_brain_dir = get_brain_dir()
-            if self.rs_brain_dir:
-                self.rs_brain_abspath = os.path.abspath(self.rs_brain_dir)
+# v1.1        if self.rs_brain_dir is None:
+# v1.1            # Keep calling get_brain_dir until it returns the path to the brain, which it
+# v1.1            # will only do after settings have been configured
+# v1.1            self.rs_brain_dir = get_brain_dir()
+# v1.1            if self.rs_brain_dir:
+# v1.1                self.rs_brain_abspath = os.path.abspath(self.rs_brain_dir)
         if not rs_options.debug_callback:
-            rs_options.debug_callback = lambda message: self.debug_callback(message)
+            rs_options.debug_callback = lambda rs, message: self.debug_callback(rs, message)    # v1.1: Add 'rs'
         # Doesn't seem to let us trace the generated RSOBJ function, so we replace the 'load' function
         # above instead.
         #if filename.endswith(os.path.join('rivescript', 'python.py')):
@@ -654,7 +756,8 @@ class RiveScriptPlugin(
                 #print_log(f'file_tracer: {filename}')
             #return self
         #print(f'self.rs_brain_abspath = {self.rs_brain_abspath}, filename = {filename}')
-        if self.rs_brain_abspath is not None and filename.startswith(self.rs_brain_abspath):
+# v1.1        if self.rs_brain_abspath is not None and filename.startswith(self.rs_brain_abspath):
+        if os.path.abspath(filename) in rs_options.files_loaded:        # v1.1: Issue #15
             return self
         return None
  
@@ -754,17 +857,20 @@ class Lexer:
         newline="\n",
     )
  
-    def __init__(self, source, filename):
+    def __init__(self, source, filename, rs):
         global rs_lexed
         self.source = source
         self.filename = filename
+        self.rs = rs                        # v1.1
         if filename in rs_lexed:            # If we lexed this file already, then just grab that
             self.tokens = rs_lexed[filename].tokens
             self.lineno_to_token_index = rs_lexed[filename].lineno_to_token_index
             self.source = rs_lexed[filename].source
+            self.rs = rs_lexed[filename].rs     # v1.1
         else:
             self.tokens = None
-            self.lineno_to_token_index = None
+            # v1.1  self.lineno_to_token_index = None
+            self.lineno_to_token_index = {}         # v1.1: Issue #17
             if self.source is None:
                 self.source = read_template_source(filename)
  
@@ -777,9 +883,13 @@ class Lexer:
         self.lineno_to_token_index[token.lineno] = len(self.tokens) - 1
  
     def tokenize(self):     # Borrowed from rivescript/parser.py
-        global trigger_source, object_source, rs_lexed
+        # v1.1 global trigger_source, object_source, rs_lexed
+        global object_source, rs_lexed          # v1.1
         if self.tokens is not None:
             return self.tokens
+        if SHOW_TRACING or SHOW_PARSING:            # v1.1
+            print_log(f"Tokenizing {self.filename}") # v1.1
+
         code = self.source.splitlines()
  
         # Track temporary variables.
@@ -1116,15 +1226,17 @@ class Lexer:
                     new_one = [self.filename, lineno, isThat]
                 else:
                     new_one = (self.filename, lineno)
-                if trigger in trigger_source:
-                    if isinstance(trigger_source[trigger], list):
-                        trigger_source[trigger].append(new_one)
+                if self.rs:                             # v1.1
+                    trigger_source = self.rs._rcp_trigger_source    # v1.1
+                    if trigger in trigger_source:
+                        if isinstance(trigger_source[trigger], list):
+                            trigger_source[trigger].append(new_one)
+                        else:
+                            trigger_source[trigger] = [trigger_source[trigger], new_one]
+                    elif isinstance(new_one, list):
+                        trigger_source[trigger] = [new_one]
                     else:
-                        trigger_source[trigger] = [trigger_source[trigger], new_one]
-                elif isinstance(new_one, list):
-                    trigger_source[trigger] = [new_one]
-                else:
-                    trigger_source[trigger] = new_one
+                        trigger_source[trigger] = new_one
  
             elif cmd == '-':
                 # - REPLY
@@ -1247,13 +1359,14 @@ def has_python_token(i, obj, tok, values=None, starting_with=False, ending_with=
     return False
  
 class FileReporter(coverage.plugin.FileReporter):
-    def __init__(self, filename):
+    def __init__(self, filename, rs=None):          # v1.1: Add 'rs'
         super(FileReporter, self).__init__(filename)
  
         self._source = None
         self._tokens = None
         self._lines_shown = False
         self._excluded_lines_shown = False
+        self.rs = rs                                # v1.1
         # v0.2.2: We are called twice, once with a relative
         # path, and once with absolute, so normalize to absolute
         self.filename = os.path.abspath(self.filename)  # v0.2.2
@@ -1270,7 +1383,7 @@ class FileReporter(coverage.plugin.FileReporter):
         show_parsing = SHOW_PARSING if not self._lines_shown else False
  
         if not self._tokens:
-            lexer = Lexer(self.source(), self.filename)
+            lexer = Lexer(self.source(), self.filename, self.rs)    # v1.1: Add 'rs'
             self._tokens = lexer.tokenize()
  
         tokens = self._tokens
@@ -1312,7 +1425,7 @@ class FileReporter(coverage.plugin.FileReporter):
         show_parsing = SHOW_PARSING if not self._excluded_lines_shown else False
  
         if not self._tokens:
-            lexer = Lexer(self.source(), self.filename)
+            lexer = Lexer(self.source(), self.filename, self.rs)        # v1.1: Add 'rs'
             self._tokens = lexer.tokenize()
  
         tokens = self._tokens
@@ -1353,7 +1466,7 @@ class FileReporter(coverage.plugin.FileReporter):
  
     def source_token_lines(self):        # v1.0.0: Support simple syntax highlighting of the RiveScript lines
         result = []
-        lexer = Lexer(self.source(), self.filename)
+        lexer = Lexer(self.source(), self.filename, self.rs)    # v1.1: Add 'rs'
         self._tokens = lexer.tokenize()
         tokens = self._tokens
         source = self.source()

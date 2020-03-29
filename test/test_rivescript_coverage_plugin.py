@@ -21,6 +21,23 @@ def say(message):
 def say_u(user, message):                      # v1.0.0: Issue 14
     return rive.reply(user, message)           # v1.0.0: Issue 14
 
+def test_issue_17():        # v1.1.0: Must be run first!
+    # v1.1.0: Issue 17: If you load all via rs.stream(), plug-in crashes
+    rs = RiveScript()
+    rs.stream("""
+        + issue 17
+        - 17 reply
+    """)
+    rs.sort_replies()
+    assert rs.reply(USER, 'issue 17') == '17 reply'
+
+    # v1.1.0: Issue 15: Calls to rs.load_file() not tracked
+
+    rs = RiveScript()
+    rs.load_file('issue_15.rive')
+    rs.sort_replies()
+    assert rs.reply(USER, 'issue 15') == '15 reply'
+
 def test_basic():
     assert say('hi') == 'hey'
     resp = say('hi')
@@ -57,7 +74,7 @@ def test_star():
 
     assert say('xyzzy') == '[ERR: No Reply Matched]'
 
-def test_bugs():        
+def test_bugs_1():        
     """Test bugs found in the code"""
     # v0.2.0: Issue #3: Plugin crashes if rive file is deleted by test
     with open('brain/issue_3.rive', 'w') as d:
@@ -100,6 +117,9 @@ def test_bugs():
     # v1.0.0: Issue 10: line numbers off due to whitespace at end of object
     assert say('issue 10') == 'Issue 10 response'
 
+def test_bugs_2():        
+    """Test bugs found in the code"""
+
     # v1.0.0: Issue 11: 'else', 'nonlocal' marked as not executed in object
     assert say('issue 11') == \
             'Issue 11 response'
@@ -134,4 +154,68 @@ def test_bugs():
     for i in range(1, 11):
         for u in (USER, USER2):
             assert say_u(u, f"issue 14 {u} q{i}") == f"issue 14 {u} r{i}"
+
+
+    # v1.1.0: Issue 16: No coverage tracked for streams
+    rs = RiveScript()
+    for _ in range(2):      # Loading the same thing more than once from the same line # shouldn't create additional _rs_stream_ files
+        rs.stream("""
+            + issue 16
+            - 16 reply
+        """)
+    rs.sort_replies()
+    assert rs.reply(USER, 'issue 16') == '16 reply'
+
+    def i16a():             # Caller in same file should be omitted from _rs_stream_ filename
+        streams = ("""+ issue 16a
+                      - 16a reply""",
+                   """+ issue 16b
+                      - 16b reply""")
+        for stream in streams:  # Loading different streams at the same line # should create 2 _rs_stream_ files
+            rs.stream(stream)
+        rs.sort_replies()
+        assert rs.reply(USER, 'issue 16a') == '16a reply'
+        assert rs.reply(USER2, 'issue 16b') == '16b reply'
+    i16a()
+
+    # v1.1.0: Issue 18: If you change topics with set_uservar outside an
+    # object, the coverage in the new topic is not tracked
+
+    rs.stream("""
+        > topic new_t
+            + issue 18
+            - 18 reply
+        < topic
+
+        + *
+        - star
+    """)
+    rs.sort_replies()
+    rs.set_uservar(USER2, "topic", "new_t")
+    assert rs.reply(USER2, 'issue 18') == '18 reply'
+    assert rs.reply(USER, 'issue 18') == 'star'
+
+@pytest.mark.parametrize("debug", [False, True])
+def test_rivescript_v1_15(debug, capsys):   # pragma: no cover
+    """Test that the debug option is preserved across prepare_brain_transplant calls"""
+    if hasattr(RiveScript, "prepare_brain_transplant"):
+        rs = RiveScript(debug=debug)
+        rs.load_file("brain/test.rive")
+        rs.sort_replies()
+        assert rs.reply(USER, 'hi') == 'hey'
+        captured = capsys.readouterr()
+        if debug:
+            assert '[RS]' in captured.out
+        else:
+            assert '[RS]' not in captured.out
+
+        rs.prepare_brain_transplant()
+        rs.load_file("brain/issue_10.rive") # Anything but test.rive
+        rs.sort_replies()
+        assert rs.reply(USER, 'issue 10') == 'Issue 10 response'
+        captured = capsys.readouterr()
+        if debug:
+            assert '[RS]' in captured.out
+        else:
+            assert '[RS]' not in captured.out
 
